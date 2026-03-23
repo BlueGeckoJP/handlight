@@ -65,6 +65,7 @@ enum Msg {
     MoveSelectionDown,
     SearchChanged(String),
     AppClicked(i32),
+    RowSelected(Option<i32>),
 }
 
 #[relm4::component]
@@ -77,7 +78,7 @@ impl SimpleComponent for App {
         gtk4::Window {
             set_decorated: false,
             add_css_class: "transparent-window",
-            set_default_size: (600, 400),
+            set_default_size: (700, 450),
 
             connect_is_active_notify => move |window| {
                 if !window.is_active() {
@@ -101,6 +102,7 @@ impl SimpleComponent for App {
 
                 gtk4::SearchEntry {
                     set_hexpand: true,
+                    set_margin_all: 8,
                     connect_search_changed[sender] => move |entry| {
                         sender.input(Msg::SearchChanged(entry.text().to_string()));
                     },
@@ -113,6 +115,10 @@ impl SimpleComponent for App {
                                 }
                                 gdk::Key::Down => {
                                     sender.input(Msg::MoveSelectionDown);
+                                    glib::Propagation::Stop
+                                }
+                                gdk::Key::Return => {
+                                    sender.input(Msg::AppClicked(-1)); // -1 means use current selection
                                     glib::Propagation::Stop
                                 }
                                 _ => glib::Propagation::Proceed,
@@ -135,16 +141,59 @@ impl SimpleComponent for App {
                             set_activate_on_single_click: false,
                             connect_row_activated[sender] => move |_, row| {
                                 sender.input(Msg::AppClicked(row.index()));
+                            },
+                            connect_row_selected[sender] => move |_, row| {
+                                sender.input(Msg::RowSelected(row.map(|r| r.index())));
                             }
                         }
                     },
 
                     #[wrap(Some)]
-                    set_end_child = &gtk4::ScrolledWindow {
-                        set_policy: (gtk4::PolicyType::Automatic, gtk4::PolicyType::Automatic),
-                        gtk4::Box {
-                            set_orientation: gtk4::Orientation::Vertical,
-                        }
+                    set_end_child = &gtk4::Box {
+                        set_orientation: gtk4::Orientation::Vertical,
+                        set_valign: gtk4::Align::Center,
+                        set_halign: gtk4::Align::Center,
+                        set_spacing: 12,
+                        set_margin_all: 24,
+                        set_hexpand: true,
+
+                        gtk4::Image {
+                            set_pixel_size: 128,
+                            #[watch]
+                            set_icon_name: model.filtered_apps_data.get(model.selected_index as usize)
+                                .and_then(|a| a.icon_name.as_deref())
+                                .or(Some("application-x-executable")),
+                        },
+
+                        gtk4::Label {
+                            add_css_class: "app-title",
+                            #[watch]
+                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
+                                .map(|a| a.name.as_str())
+                                .unwrap_or(""),
+                        },
+
+                        gtk4::Label {
+                            add_css_class: "dim-label",
+                            set_wrap: true,
+                            set_max_width_chars: 40,
+                            set_justify: gtk4::Justification::Center,
+                            #[watch]
+                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
+                                .and_then(|a| a.description.as_deref())
+                                .unwrap_or(""),
+                        },
+
+                        gtk4::Label {
+                            add_css_class: "dim-label-monospace",
+                            set_wrap: true,
+                            set_max_width_chars: 40,
+                            set_ellipsize: gtk4::pango::EllipsizeMode::End,
+                            #[watch]
+                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
+                                .and_then(|a| a.exec.as_deref())
+                                .unwrap_or(""),
+                        },
                     }
                 }
             }
@@ -158,7 +207,6 @@ impl SimpleComponent for App {
     ) -> ComponentParts<Self> {
         let all_apps = get_installed_apps();
 
-        // Initialize the filtered list to show all apps initially
         let mut filtered_apps = FactoryVecDeque::builder()
             .launch(gtk4::ListBox::default())
             .forward(sender.input_sender(), |_| unreachable!());
@@ -180,6 +228,11 @@ impl SimpleComponent for App {
         };
 
         let list_box = model.filtered_apps.widget();
+        // Select the first row by default
+        if let Some(row) = list_box.row_at_index(0) {
+            list_box.select_row(Some(&row));
+        }
+
         let widgets = view_output!();
 
         ComponentParts { model, widgets }
@@ -190,26 +243,49 @@ impl SimpleComponent for App {
             Msg::MoveSelectionUp => {
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
-                }
-            }
-            Msg::MoveSelectionDown => {
-                self.selected_index += 1;
-            }
-            Msg::SearchChanged(query) => {
-                let lower_query = query.to_lowercase();
-                let mut guard = self.filtered_apps.guard();
-                guard.clear();
-                self.filtered_apps_data.clear();
-
-                for app in &self.all_apps {
-                    if app.name.to_lowercase().contains(&lower_query) {
-                        guard.push_back(app.clone());
-                        self.filtered_apps_data.push(app.clone());
+                    let list_box = self.filtered_apps.widget();
+                    if let Some(row) = list_box.row_at_index(self.selected_index) {
+                        list_box.select_row(Some(&row));
                     }
                 }
             }
+            Msg::MoveSelectionDown => {
+                if (self.selected_index as usize) < self.filtered_apps_data.len() - 1 {
+                    self.selected_index += 1;
+                    let list_box = self.filtered_apps.widget();
+                    if let Some(row) = list_box.row_at_index(self.selected_index) {
+                        list_box.select_row(Some(&row));
+                    }
+                }
+            }
+            Msg::SearchChanged(query) => {
+                let lower_query = query.to_lowercase();
+                {
+                    let mut guard = self.filtered_apps.guard();
+                    guard.clear();
+                    self.filtered_apps_data.clear();
+
+                    for app in &self.all_apps {
+                        if app.name.to_lowercase().contains(&lower_query) {
+                            guard.push_back(app.clone());
+                            self.filtered_apps_data.push(app.clone());
+                        }
+                    }
+                }
+                self.selected_index = 0;
+                let list_box = self.filtered_apps.widget();
+                if let Some(row) = list_box.row_at_index(0) {
+                    list_box.select_row(Some(&row));
+                }
+            }
+            Msg::RowSelected(index) => {
+                if let Some(idx) = index {
+                    self.selected_index = idx;
+                }
+            }
             Msg::AppClicked(index) => {
-                if let Some(app) = self.filtered_apps_data.get(index as usize) {
+                let target_index = if index == -1 { self.selected_index } else { index };
+                if let Some(app) = self.filtered_apps_data.get(target_index as usize) {
                     if let Some(exec) = &app.exec {
                         let exec_clean = exec
                             .replace("%u", "")
@@ -247,6 +323,20 @@ async fn main() {
             .ui-container {
                 background-color: @window_bg_color;
                 border-radius: 12px;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            }
+            .app-title {
+                font-size: 24pt;
+                font-weight: bold;
+            }
+            .dim-label {
+                color: @insensitive_fg_color;
+                font-size: 11pt;
+            }
+            .dim-label-monospace {
+                color: @insensitive_fg_color;
+                font-family: monospace;
+                font-size: 9pt;
             }
         "#,
     );

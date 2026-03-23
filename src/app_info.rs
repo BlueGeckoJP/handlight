@@ -7,6 +7,7 @@ pub struct AppInfo {
     pub name: String,
     pub icon_name: Option<String>,
     pub exec: Option<String>,
+    pub description: Option<String>,
 }
 
 pub fn get_installed_apps() -> Vec<AppInfo> {
@@ -31,6 +32,7 @@ pub fn get_installed_apps() -> Vec<AppInfo> {
                                 name: name.to_string(),
                                 icon_name: desktop_entry.icon().map(|s| s.to_string()),
                                 exec: desktop_entry.exec().map(|s| s.to_string()),
+                                description: desktop_entry.comment(&[] as &[&str]).map(|s| s.to_string()),
                             });
                         }
                     }
