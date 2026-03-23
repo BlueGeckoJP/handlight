@@ -79,6 +79,22 @@ impl SimpleComponent for App {
             add_css_class: "transparent-window",
             set_default_size: (600, 400),
 
+            connect_is_active_notify => move |window| {
+                if !window.is_active() {
+                    std::process::exit(0);
+                }
+            },
+
+            add_controller = gtk4::EventControllerKey {
+                set_propagation_phase: gtk4::PropagationPhase::Capture,
+                connect_key_pressed => move |_, keyval, _, _| {
+                    if keyval == gdk::Key::Escape {
+                        std::process::exit(0);
+                    }
+                    glib::Propagation::Proceed
+                }
+            },
+
             gtk4::Box {
                 set_orientation: gtk4::Orientation::Vertical,
                 add_css_class: "ui-container",
