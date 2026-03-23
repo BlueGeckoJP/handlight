@@ -1,6 +1,8 @@
 mod app_info;
 
-use app_info::{get_installed_apps, AppInfo};
+use std::process::{self, Stdio};
+
+use app_info::{AppInfo, get_installed_apps};
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use relm4::factory::FactoryVecDeque;
@@ -54,6 +56,7 @@ struct App {
     selected_index: i32,
     all_apps: Vec<AppInfo>,
     filtered_apps: FactoryVecDeque<AppRow>,
+    filtered_apps_data: Vec<AppInfo>,
 }
 
 #[derive(Debug)]
@@ -61,6 +64,7 @@ enum Msg {
     MoveSelectionUp,
     MoveSelectionDown,
     SearchChanged(String),
+    AppClicked(i32),
 }
 
 #[relm4::component]
@@ -112,6 +116,10 @@ impl SimpleComponent for App {
                         #[local_ref]
                         list_box -> gtk4::ListBox {
                             set_selection_mode: gtk4::SelectionMode::Single,
+                            set_activate_on_single_click: false,
+                            connect_row_activated[sender] => move |_, row| {
+                                sender.input(Msg::AppClicked(row.index()));
+                            }
                         }
                     },
 
@@ -133,12 +141,12 @@ impl SimpleComponent for App {
         sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let all_apps = get_installed_apps();
-        
+
         // Initialize the filtered list to show all apps initially
         let mut filtered_apps = FactoryVecDeque::builder()
             .launch(gtk4::ListBox::default())
             .forward(sender.input_sender(), |_| unreachable!());
-            
+
         {
             let mut guard = filtered_apps.guard();
             for app in &all_apps {
@@ -146,10 +154,13 @@ impl SimpleComponent for App {
             }
         }
 
-        let model = App { 
+        let filtered_apps_data = all_apps.clone();
+
+        let model = App {
             selected_index: 0,
             all_apps,
             filtered_apps,
+            filtered_apps_data,
         };
 
         let list_box = model.filtered_apps.widget();
@@ -172,10 +183,35 @@ impl SimpleComponent for App {
                 let lower_query = query.to_lowercase();
                 let mut guard = self.filtered_apps.guard();
                 guard.clear();
-                
+                self.filtered_apps_data.clear();
+
                 for app in &self.all_apps {
                     if app.name.to_lowercase().contains(&lower_query) {
                         guard.push_back(app.clone());
+                        self.filtered_apps_data.push(app.clone());
+                    }
+                }
+            }
+            Msg::AppClicked(index) => {
+                if let Some(app) = self.filtered_apps_data.get(index as usize) {
+                    if let Some(exec) = &app.exec {
+                        let exec_clean = exec
+                            .replace("%u", "")
+                            .replace("%U", "")
+                            .replace("%f", "")
+                            .replace("%F", "")
+                            .replace("%c", &app.name)
+                            .replace("%k", "");
+
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&exec_clean)
+                            .stderr(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stdin(Stdio::null())
+                            .spawn();
+
+                        process::exit(0);
                     }
                 }
             }
