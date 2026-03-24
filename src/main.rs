@@ -254,7 +254,7 @@ impl SimpleComponent for App {
                     .build();
 
                 let label = gtk4::Label::builder()
-                    .label(&cat.to_uppercase())
+                    .label(cat.to_uppercase())
                     .css_classes(vec!["category-label".to_string()])
                     .halign(gtk4::Align::Start)
                     .build();
@@ -327,26 +327,25 @@ impl SimpleComponent for App {
             }
             Msg::AppClicked(index) => {
                 let target_index = if index == -1 { self.selected_index } else { index };
-                if let Some(item) = self.filtered_apps_data.get(target_index as usize) {
-                    if let Some(exec) = item.exec() {
-                        let exec_clean = exec
-                            .replace("%u", "")
-                            .replace("%U", "")
-                            .replace("%f", "")
-                            .replace("%F", "")
-                            .replace("%c", item.name())
-                            .replace("%k", "");
+                if let Some(exec) = self.filtered_apps_data.get(target_index as usize).and_then(|i| i.exec()) {
+                    let item = self.filtered_apps_data.get(target_index as usize).unwrap();
+                    let exec_clean = exec
+                        .replace("%u", "")
+                        .replace("%U", "")
+                        .replace("%f", "")
+                        .replace("%F", "")
+                        .replace("%c", item.name())
+                        .replace("%k", "");
 
-                        let _ = std::process::Command::new("sh")
-                            .arg("-c")
-                            .arg(&exec_clean)
-                            .stderr(Stdio::null())
-                            .stdout(Stdio::null())
-                            .stdin(Stdio::null())
-                            .spawn();
+                    let _ = std::process::Command::new("sh")
+                        .arg("-c")
+                        .arg(&exec_clean)
+                        .stderr(Stdio::null())
+                        .stdout(Stdio::null())
+                        .stdin(Stdio::null())
+                        .spawn();
 
-                        process::exit(0);
-                    }
+                    process::exit(0);
                 }
             }
         }

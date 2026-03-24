@@ -5,16 +5,12 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Category {
     Applications,
-    WebBookmarks,
-    Files,
 }
 
 impl Category {
     pub fn display_name(&self) -> &str {
         match self {
             Self::Applications => "Applications",
-            Self::WebBookmarks => "Web Bookmarks",
-            Self::Files => "Files",
         }
     }
 }
@@ -86,7 +82,9 @@ pub fn get_installed_apps() -> Vec<Item> {
                                 name: name.to_string(),
                                 icon_name: desktop_entry.icon().map(|s| s.to_string()),
                                 exec: desktop_entry.exec().map(|s| s.to_string()),
-                                description: desktop_entry.comment(&[] as &[&str]).map(|s| s.to_string()),
+                                description: desktop_entry
+                                    .comment(&[] as &[&str])
+                                    .map(|s| s.to_string()),
                             }));
                         }
                     }
@@ -95,11 +93,9 @@ pub fn get_installed_apps() -> Vec<Item> {
         }
     }
 
-    apps.sort_by(|a, b| {
-        match a.category().cmp(&b.category()) {
-            std::cmp::Ordering::Equal => a.name().cmp(b.name()),
-            other => other,
-        }
+    apps.sort_by(|a, b| match a.category().cmp(&b.category()) {
+        std::cmp::Ordering::Equal => a.name().cmp(b.name()),
+        other => other,
     });
     apps
 }
