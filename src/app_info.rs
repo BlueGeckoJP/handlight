@@ -8,7 +8,7 @@ pub enum Category {
 }
 
 impl Category {
-    pub fn display_name(&self) -> &str {
+    pub fn display_name(&self) -> &'static str {
         match self {
             Self::Applications => "Applications",
         }

@@ -1,6 +1,8 @@
 mod app_info;
 
+use std::cell::RefCell;
 use std::process::{self, Stdio};
+use std::rc::Rc;
 
 use app_info::{Item, get_installed_apps};
 use gtk4::prelude::*;
@@ -31,7 +33,6 @@ impl FactoryComponent for AppRow {
             set_orientation: gtk4::Orientation::Horizontal,
             set_spacing: 12,
             set_margin_all: 8,
-            set_widget_name: self.app.category().display_name(),
 
             gtk4::Image {
                 set_icon_name: Some(self.app.icon_name().unwrap_or("application-x-executable")),
@@ -57,12 +58,12 @@ struct App {
     selected_index: i32,
     all_apps: Vec<Item>,
     filtered_apps: FactoryVecDeque<AppRow>,
-    filtered_apps_data: Vec<Item>,
+    filtered_apps_data: Rc<RefCell<Vec<Item>>>,
 }
 
 impl App {
-    fn selected_item(&self) -> Option<&Item> {
-        self.filtered_apps_data.get(self.selected_index as usize)
+    fn selected_item(&self) -> Option<Item> {
+        self.filtered_apps_data.borrow().get(self.selected_index as usize).cloned()
     }
 }
 
@@ -227,7 +228,8 @@ impl SimpleComponent for App {
             }
         }
 
-        let filtered_apps_data = all_apps.clone();
+        let filtered_apps_data = Rc::new(RefCell::new(all_apps.clone()));
+        let filtered_apps_data_for_header = filtered_apps_data.clone();
 
         let model = App {
             selected_index: 0,
@@ -237,17 +239,25 @@ impl SimpleComponent for App {
         };
 
         let list_box = model.filtered_apps.widget();
-        list_box.set_header_func(|row, before| {
-            let child = row.child().and_downcast::<gtk4::Box>().unwrap();
-            let cat = child.widget_name();
+        list_box.set_header_func(move |row, before| {
+            let index = row.index();
+            if index < 0 {
+                return;
+            }
+            let data = filtered_apps_data_for_header.borrow();
+            let item = &data[index as usize];
+            let cat = item.category().display_name();
 
             let before_cat = before.and_then(|r| {
-                r.child()
-                    .and_downcast::<gtk4::Box>()
-                    .map(|c| c.widget_name())
+                let b_index = r.index();
+                if b_index >= 0 {
+                    Some(data[b_index as usize].category().display_name())
+                } else {
+                    None
+                }
             });
 
-            if before_cat.is_none() || Some(cat.clone()) != before_cat {
+            if before_cat.is_none() || Some(cat) != before_cat {
                 let header_box = gtk4::Box::builder()
                     .orientation(gtk4::Orientation::Vertical)
                     .css_classes(vec!["category-header".to_string()])
@@ -292,7 +302,7 @@ impl SimpleComponent for App {
                 }
             }
             Msg::MoveSelectionDown => {
-                if (self.selected_index as usize) < self.filtered_apps_data.len() - 1 {
+                if (self.selected_index as usize) < self.filtered_apps_data.borrow().len() - 1 {
                     self.selected_index += 1;
                     let list_box = self.filtered_apps.widget();
                     if let Some(row) = list_box.row_at_index(self.selected_index) {
@@ -305,12 +315,13 @@ impl SimpleComponent for App {
                 {
                     let mut guard = self.filtered_apps.guard();
                     guard.clear();
-                    self.filtered_apps_data.clear();
+                    let mut data = self.filtered_apps_data.borrow_mut();
+                    data.clear();
 
                     for app in &self.all_apps {
                         if app.name().to_lowercase().contains(&lower_query) {
                             guard.push_back(app.clone());
-                            self.filtered_apps_data.push(app.clone());
+                            data.push(app.clone());
                         }
                     }
                 }
@@ -327,25 +338,27 @@ impl SimpleComponent for App {
             }
             Msg::AppClicked(index) => {
                 let target_index = if index == -1 { self.selected_index } else { index };
-                if let Some(exec) = self.filtered_apps_data.get(target_index as usize).and_then(|i| i.exec()) {
-                    let item = self.filtered_apps_data.get(target_index as usize).unwrap();
-                    let exec_clean = exec
-                        .replace("%u", "")
-                        .replace("%U", "")
-                        .replace("%f", "")
-                        .replace("%F", "")
-                        .replace("%c", item.name())
-                        .replace("%k", "");
+                let item = self.filtered_apps_data.borrow().get(target_index as usize).cloned();
+                if let Some(item) = item {
+                    if let Some(exec) = item.exec() {
+                        let exec_clean = exec
+                            .replace("%u", "")
+                            .replace("%U", "")
+                            .replace("%f", "")
+                            .replace("%F", "")
+                            .replace("%c", item.name())
+                            .replace("%k", "");
 
-                    let _ = std::process::Command::new("sh")
-                        .arg("-c")
-                        .arg(&exec_clean)
-                        .stderr(Stdio::null())
-                        .stdout(Stdio::null())
-                        .stdin(Stdio::null())
-                        .spawn();
+                        let _ = std::process::Command::new("sh")
+                            .arg("-c")
+                            .arg(&exec_clean)
+                            .stderr(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stdin(Stdio::null())
+                            .spawn();
 
-                    process::exit(0);
+                        process::exit(0);
+                    }
                 }
             }
         }
