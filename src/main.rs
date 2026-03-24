@@ -2,14 +2,14 @@ mod app_info;
 
 use std::process::{self, Stdio};
 
-use app_info::{AppInfo, get_installed_apps};
+use app_info::{AppInfo, Item, get_installed_apps};
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use relm4::factory::FactoryVecDeque;
 use relm4::prelude::*;
 
 struct AppRow {
-    app: AppInfo,
+    app: Item,
 }
 
 #[derive(Debug)]
@@ -20,7 +20,7 @@ enum AppRowOutput {}
 
 #[relm4::factory]
 impl FactoryComponent for AppRow {
-    type Init = AppInfo;
+    type Init = Item;
     type Input = AppRowMsg;
     type Output = AppRowOutput;
     type CommandOutput = ();
@@ -33,13 +33,13 @@ impl FactoryComponent for AppRow {
             set_margin_all: 8,
 
             gtk4::Image {
-                set_icon_name: Some(self.app.icon_name.as_deref().unwrap_or("application-x-executable")),
+                set_icon_name: Some(self.app.icon_name().unwrap_or("application-x-executable")),
                 set_pixel_size: 32,
             },
 
             gtk4::Label {
                 #[watch]
-                set_label: &self.app.name,
+                set_label: self.app.name(),
                 set_halign: gtk4::Align::Start,
             }
         }
