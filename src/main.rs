@@ -164,7 +164,7 @@ impl SimpleComponent for App {
                         set_margin_all: 24,
                         set_hexpand: true,
 
-                        match model.filtered_apps_data.get(model.selected_index as usize) {
+                        match model.selected_item() {
                             Some(app_item) => gtk4::Box {
                                 set_orientation: gtk4::Orientation::Vertical,
                                 set_spacing: 12,
