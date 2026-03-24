@@ -2,6 +2,60 @@ use freedesktop_desktop_entry::DesktopEntry;
 use std::fs;
 use std::path::PathBuf;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Category {
+    Applications,
+    WebBookmarks,
+    Files,
+}
+
+impl Category {
+    pub fn display_name(&self) -> &str {
+        match self {
+            Self::Applications => "Applications",
+            Self::WebBookmarks => "Web Bookmarks",
+            Self::Files => "Files",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Item {
+    Application(AppInfo),
+}
+
+impl Item {
+    pub fn category(&self) -> Category {
+        match self {
+            Self::Application(_) => Category::Applications,
+        }
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Application(app) => &app.name,
+        }
+    }
+
+    pub fn icon_name(&self) -> Option<&str> {
+        match self {
+            Self::Application(app) => app.icon_name.as_deref(),
+        }
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            Self::Application(app) => app.description.as_deref(),
+        }
+    }
+
+    pub fn exec(&self) -> Option<&str> {
+        match self {
+            Self::Application(app) => app.exec.as_deref(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AppInfo {
     pub name: String,
@@ -10,7 +64,7 @@ pub struct AppInfo {
     pub description: Option<String>,
 }
 
-pub fn get_installed_apps() -> Vec<AppInfo> {
+pub fn get_installed_apps() -> Vec<Item> {
     let mut apps = Vec::new();
 
     let mut dirs = vec![PathBuf::from("/usr/share/applications")];
@@ -28,12 +82,12 @@ pub fn get_installed_apps() -> Vec<AppInfo> {
                             continue;
                         }
                         if let Some(name) = desktop_entry.name(&[] as &[&str]) {
-                            apps.push(AppInfo {
+                            apps.push(Item::Application(AppInfo {
                                 name: name.to_string(),
                                 icon_name: desktop_entry.icon().map(|s| s.to_string()),
                                 exec: desktop_entry.exec().map(|s| s.to_string()),
                                 description: desktop_entry.comment(&[] as &[&str]).map(|s| s.to_string()),
-                            });
+                            }));
                         }
                     }
                 }
@@ -41,6 +95,11 @@ pub fn get_installed_apps() -> Vec<AppInfo> {
         }
     }
 
-    apps.sort_by(|a, b| a.name.cmp(&b.name));
+    apps.sort_by(|a, b| {
+        match a.category().cmp(&b.category()) {
+            std::cmp::Ordering::Equal => a.name().cmp(b.name()),
+            other => other,
+        }
+    });
     apps
 }
