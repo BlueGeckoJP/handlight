@@ -2,7 +2,7 @@ mod app_info;
 
 use std::process::{self, Stdio};
 
-use app_info::{AppInfo, Item, get_installed_apps};
+use app_info::{Item, get_installed_apps};
 use gtk4::prelude::*;
 use gtk4::{gdk, glib};
 use relm4::factory::FactoryVecDeque;
@@ -31,6 +31,7 @@ impl FactoryComponent for AppRow {
             set_orientation: gtk4::Orientation::Horizontal,
             set_spacing: 12,
             set_margin_all: 8,
+            set_widget_name: self.app.category().display_name(),
 
             gtk4::Image {
                 set_icon_name: Some(self.app.icon_name().unwrap_or("application-x-executable")),
@@ -54,9 +55,15 @@ impl FactoryComponent for AppRow {
 
 struct App {
     selected_index: i32,
-    all_apps: Vec<AppInfo>,
+    all_apps: Vec<Item>,
     filtered_apps: FactoryVecDeque<AppRow>,
-    filtered_apps_data: Vec<AppInfo>,
+    filtered_apps_data: Vec<Item>,
+}
+
+impl App {
+    fn selected_item(&self) -> Option<&Item> {
+        self.filtered_apps_data.get(self.selected_index as usize)
+    }
 }
 
 #[derive(Debug)]
@@ -157,43 +164,45 @@ impl SimpleComponent for App {
                         set_margin_all: 24,
                         set_hexpand: true,
 
-                        gtk4::Image {
-                            set_pixel_size: 128,
-                            #[watch]
-                            set_icon_name: model.filtered_apps_data.get(model.selected_index as usize)
-                                .and_then(|a| a.icon_name.as_deref())
-                                .or(Some("application-x-executable")),
-                        },
+                        match model.filtered_apps_data.get(model.selected_index as usize) {
+                            Some(app_item) => gtk4::Box {
+                                set_orientation: gtk4::Orientation::Vertical,
+                                set_spacing: 12,
 
-                        gtk4::Label {
-                            add_css_class: "app-title",
-                            #[watch]
-                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
-                                .map(|a| a.name.as_str())
-                                .unwrap_or(""),
-                        },
+                                gtk4::Image {
+                                    set_pixel_size: 128,
+                                    #[watch]
+                                    set_icon_name: app_item.icon_name().or(Some("application-x-executable")),
+                                },
 
-                        gtk4::Label {
-                            add_css_class: "dim-label",
-                            set_wrap: true,
-                            set_max_width_chars: 40,
-                            set_justify: gtk4::Justification::Center,
-                            #[watch]
-                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
-                                .and_then(|a| a.description.as_deref())
-                                .unwrap_or(""),
-                        },
+                                gtk4::Label {
+                                    add_css_class: "app-title",
+                                    #[watch]
+                                    set_label: app_item.name(),
+                                },
 
-                        gtk4::Label {
-                            add_css_class: "dim-label-monospace",
-                            set_wrap: true,
-                            set_max_width_chars: 40,
-                            set_ellipsize: gtk4::pango::EllipsizeMode::End,
-                            #[watch]
-                            set_label: model.filtered_apps_data.get(model.selected_index as usize)
-                                .and_then(|a| a.exec.as_deref())
-                                .unwrap_or(""),
-                        },
+                                gtk4::Label {
+                                    add_css_class: "dim-label",
+                                    set_wrap: true,
+                                    set_max_width_chars: 40,
+                                    set_justify: gtk4::Justification::Center,
+                                    #[watch]
+                                    set_label: app_item.description().unwrap_or(""),
+                                },
+
+                                gtk4::Label {
+                                    add_css_class: "dim-label-monospace",
+                                    set_wrap: true,
+                                    set_max_width_chars: 40,
+                                    set_ellipsize: gtk4::pango::EllipsizeMode::End,
+                                    #[watch]
+                                    set_label: app_item.exec().unwrap_or(""),
+                                },
+                            },
+                            _ => gtk4::Label {
+                                set_label: "Select an item",
+                            },
+                        }
                     }
                 }
             }
@@ -228,6 +237,39 @@ impl SimpleComponent for App {
         };
 
         let list_box = model.filtered_apps.widget();
+        list_box.set_header_func(|row, before| {
+            let child = row.child().and_downcast::<gtk4::Box>().unwrap();
+            let cat = child.widget_name();
+
+            let before_cat = before.and_then(|r| {
+                r.child()
+                    .and_downcast::<gtk4::Box>()
+                    .map(|c| c.widget_name())
+            });
+
+            if before_cat.is_none() || Some(cat.clone()) != before_cat {
+                let header_box = gtk4::Box::builder()
+                    .orientation(gtk4::Orientation::Vertical)
+                    .css_classes(vec!["category-header".to_string()])
+                    .build();
+
+                let label = gtk4::Label::builder()
+                    .label(&cat.to_uppercase())
+                    .css_classes(vec!["category-label".to_string()])
+                    .halign(gtk4::Align::Start)
+                    .build();
+
+                let separator = gtk4::Separator::new(gtk4::Orientation::Horizontal);
+
+                header_box.append(&label);
+                header_box.append(&separator);
+
+                row.set_header(Some(&header_box));
+            } else {
+                row.set_header(None::<&gtk4::Widget>);
+            }
+        });
+
         // Select the first row by default
         if let Some(row) = list_box.row_at_index(0) {
             list_box.select_row(Some(&row));
@@ -266,7 +308,7 @@ impl SimpleComponent for App {
                     self.filtered_apps_data.clear();
 
                     for app in &self.all_apps {
-                        if app.name.to_lowercase().contains(&lower_query) {
+                        if app.name().to_lowercase().contains(&lower_query) {
                             guard.push_back(app.clone());
                             self.filtered_apps_data.push(app.clone());
                         }
@@ -285,14 +327,14 @@ impl SimpleComponent for App {
             }
             Msg::AppClicked(index) => {
                 let target_index = if index == -1 { self.selected_index } else { index };
-                if let Some(app) = self.filtered_apps_data.get(target_index as usize) {
-                    if let Some(exec) = &app.exec {
+                if let Some(item) = self.filtered_apps_data.get(target_index as usize) {
+                    if let Some(exec) = item.exec() {
                         let exec_clean = exec
                             .replace("%u", "")
                             .replace("%U", "")
                             .replace("%f", "")
                             .replace("%F", "")
-                            .replace("%c", &app.name)
+                            .replace("%c", item.name())
                             .replace("%k", "");
 
                         let _ = std::process::Command::new("sh")
@@ -337,6 +379,15 @@ async fn main() {
                 color: @insensitive_fg_color;
                 font-family: monospace;
                 font-size: 9pt;
+            }
+            .category-header {
+                margin-top: 12px;
+            }
+            .category-label {
+                font-size: 9pt;
+                font-weight: bold;
+                color: @insensitive_fg_color;
+                margin: 4px 8px;
             }
         "#,
     );
