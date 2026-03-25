@@ -1,5 +1,3 @@
-use gtk4::prelude::*;
-
 pub fn get_new_adjustment_value(
     row_y: f64,
     row_height: f64,
