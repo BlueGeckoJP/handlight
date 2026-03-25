@@ -144,6 +144,7 @@ impl SimpleComponent for App {
                     #[wrap(Some)]
                     set_start_child = &gtk4::ScrolledWindow {
                         set_policy: (gtk4::PolicyType::Never, gtk4::PolicyType::Automatic),
+                        set_vadjustment: Some(&vadjustment),
                         #[local_ref]
                         list_box -> gtk4::ListBox {
                             set_selection_mode: gtk4::SelectionMode::Single,
@@ -151,8 +152,20 @@ impl SimpleComponent for App {
                             connect_row_activated[sender] => move |_, row| {
                                 sender.input(Msg::AppClicked(row.index()));
                             },
-                            connect_row_selected[sender] => move |_, row| {
-                                sender.input(Msg::RowSelected(row.map(|r| r.index())));
+                            connect_row_selected[sender, vadjustment] => move |_, row| {
+                                if let Some(row) = row {
+                                    let allocation = row.allocation();
+                                    let new_value = crate::scrolling::get_new_adjustment_value(
+                                        allocation.y() as f64,
+                                        allocation.height() as f64,
+                                        vadjustment.value(),
+                                        vadjustment.page_size(),
+                                    );
+                                    vadjustment.set_value(new_value);
+                                    sender.input(Msg::RowSelected(Some(row.index())));
+                                } else {
+                                    sender.input(Msg::RowSelected(None));
+                                }
                             }
                         }
                     },
@@ -285,6 +298,8 @@ impl SimpleComponent for App {
         if let Some(row) = list_box.row_at_index(0) {
             list_box.select_row(Some(&row));
         }
+
+        let vadjustment = gtk4::Adjustment::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
 
         let widgets = view_output!();
 
