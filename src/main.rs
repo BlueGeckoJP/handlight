@@ -1,3 +1,4 @@
+mod scrolling;
 mod app_info;
 
 use std::cell::RefCell;
