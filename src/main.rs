@@ -44,6 +44,9 @@ impl FactoryComponent for AppRow {
                 #[watch]
                 set_label: self.app.name(),
                 set_halign: gtk4::Align::Start,
+                set_ellipsize: gtk4::pango::EllipsizeMode::End,
+                set_hexpand: true,
+                set_width_chars: 1,
             }
         }
     }
@@ -192,6 +195,10 @@ impl SimpleComponent for App {
 
                                 gtk4::Label {
                                     add_css_class: "app-title",
+                                    set_ellipsize: gtk4::pango::EllipsizeMode::End,
+                                    set_hexpand: true,
+                                    set_width_chars: 1,
+                                    set_halign: gtk4::Align::Center,
                                     #[watch]
                                     set_label: app_item.name(),
                                 },
@@ -259,13 +266,16 @@ impl SimpleComponent for App {
                 return;
             }
             let data = filtered_apps_data_for_header.borrow();
-            let item = &data[index as usize];
+            let item = match data.get(index as usize) {
+                Some(i) => i,
+                None => return,
+            };
             let cat = item.category().display_name();
 
             let before_cat = before.and_then(|r| {
                 let b_index = r.index();
                 if b_index >= 0 {
-                    Some(data[b_index as usize].category().display_name())
+                    data.get(b_index as usize).map(|i| i.category().display_name())
                 } else {
                     None
                 }
